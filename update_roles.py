@@ -2,15 +2,14 @@ import requests
 import os
 import time
 
-GROUP_ID = 6011967  # BTF Turkish Armed Forces
-WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")  # GitHub Secrets ile eklediğin webhook
+GROUP_ID = 6011967
+WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
 session = requests.Session()
 session.headers.update({
     "User-Agent": "Mozilla/5.0"
 })
 
-# Roller
 TARGET_ROLES_1 = [
     "Büyük Konsey",
     "Ankara Heyeti",
@@ -27,14 +26,12 @@ TARGET_ROLES_2 = [
     "Lider"
 ]
 
-# Tüm roller
 def get_roles():
     url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles"
     resp = session.get(url)
     resp.raise_for_status()
     return resp.json()["roles"]
 
-# Bir role ait üyeleri al
 def get_members(role_id):
     members = []
     url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles/{role_id}/users?limit=100"
@@ -43,14 +40,11 @@ def get_members(role_id):
         resp.raise_for_status()
         data = resp.json()
         for m in data["data"]:
-            # Sadece normal isim (name veya username) alınacak, displayName kullanılmayacak
-            if "user" in m:
-                if "name" in m["user"]:
-                    members.append(m["user"]["name"])
-                elif "username" in m["user"]:
-                    members.append(m["user"]["username"])
-                else:
-                    members.append("Bilinmiyor")
+            # Sadece username alıyoruz (normal isim)
+            user_info = m.get("user", {})
+            username = user_info.get("username")
+            if username:
+                members.append(username)
             else:
                 members.append("Bilinmiyor")
         cursor = data.get("nextPageCursor")
@@ -60,7 +54,6 @@ def get_members(role_id):
             url = None
     return members
 
-# Mesaj formatla
 def format_message(target_roles):
     roles = get_roles()
     msg = ""
@@ -73,7 +66,6 @@ def format_message(target_roles):
             msg += "\n"
     return msg
 
-# Discord’a gönder veya güncelle
 def send_to_discord(message, message_id=None):
     data = {"content": message}
     if message_id:
@@ -83,18 +75,16 @@ def send_to_discord(message, message_id=None):
     else:
         resp = requests.post(WEBHOOK_URL, json=data)
         if resp.status_code in [200, 204]:
-            return resp.json()["id"]
+            return resp.json().get("id")
     return None
 
 def main():
     message_id_1 = None
     message_id_2 = None
     while True:
-        # 1. Mesaj: Büyük Konsey → Yönetim Kurulu
         msg1 = format_message(TARGET_ROLES_1)
         message_id_1 = send_to_discord(msg1, message_id_1)
 
-        # 2. Mesaj: Üst Yönetim Kurulu → Lider
         msg2 = format_message(TARGET_ROLES_2)
         message_id_2 = send_to_discord(msg2, message_id_2)
 
