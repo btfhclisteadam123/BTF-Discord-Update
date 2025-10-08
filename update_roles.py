@@ -10,7 +10,7 @@ session.headers.update({
     "User-Agent": "Mozilla/5.0"
 })
 
-# Roller
+# Roller gruplar
 TARGET_ROLES_1 = [
     "Büyük Konsey",
     "Ankara Heyeti",
@@ -27,23 +27,27 @@ TARGET_ROLES_2 = [
     "Lider"
 ]
 
+# Tüm roller
 def get_roles():
     url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles"
     resp = session.get(url)
     resp.raise_for_status()
     return resp.json()["roles"]
 
+# Bir role ait üyeleri al
 def get_members(role_id):
     members = []
     url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles/{role_id}/users?limit=100"
     while url:
         resp = session.get(url)
-        if resp.status_code != 200:
-            return ["Üye bilgisi alınamadı"]
+        resp.raise_for_status()
         data = resp.json()
         for m in data.get("data", []):
-            name = m.get("user", {}).get("name", "Bilinmiyor")
-            members.append(name)
+            if "user" in m:
+                name = m["user"].get("name") or m["user"].get("displayName") or "Bilinmiyor"
+                members.append(name)
+            else:
+                members.append("Bilinmiyor")
         cursor = data.get("nextPageCursor")
         if cursor:
             url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles/{role_id}/users?cursor={cursor}&limit=100"
@@ -51,6 +55,7 @@ def get_members(role_id):
             url = None
     return members
 
+# Mesaj formatla
 def format_message(target_roles):
     roles = get_roles()
     msg = ""
@@ -63,10 +68,13 @@ def format_message(target_roles):
             msg += "\n"
     return msg
 
+# Discord’a gönder veya güncelle
 def send_to_discord(message, message_id=None):
     data = {"content": message}
     if message_id:
         resp = requests.patch(f"{WEBHOOK_URL}/messages/{message_id}", json=data)
+        if resp.status_code in [200, 204]:
+            return message_id
     else:
         resp = requests.post(WEBHOOK_URL, json=data)
         if resp.status_code in [200, 201, 204]:
@@ -74,18 +82,20 @@ def send_to_discord(message, message_id=None):
     return None
 
 def main():
-    msg1_id = None
-    msg2_id = None
+    message_id_1 = None
+    message_id_2 = None
 
     while True:
+        # 1. Mesaj: Büyük Konsey → Yönetim Kurulu
         msg1 = format_message(TARGET_ROLES_1)
+        message_id_1 = send_to_discord(msg1, message_id_1)
+
+        # 2. Mesaj: Üst Yönetim Kurulu → Lider
         msg2 = format_message(TARGET_ROLES_2)
+        message_id_2 = send_to_discord(msg2, message_id_2)
 
-        msg1_id = send_to_discord(msg1, msg1_id)
-        msg2_id = send_to_discord(msg2, msg2_id)
-
-        print("Liste güncellendi. 20 dakika bekleniyor...")
-        time.sleep(1200)  # 20 dakika bekle
+        # 20 dakika bekle
+        time.sleep(1200)
 
 if __name__ == "__main__":
     main()
