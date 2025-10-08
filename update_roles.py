@@ -1,95 +1,107 @@
 import requests
 import os
-import time
 
+# Roblox grup ID
 GROUP_ID = 6011967
-WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0"
-})
+# Discord Webhook URL, GitHub Secrets üzerinden alınacak
+DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL")
 
-TARGET_ROLES_1 = [
-    "Büyük Konsey",
-    "Ankara Heyeti",
-    "Yüksek Askerî Şûra",
-    "Yönetim Kurulu"
-]
+# Önceki mesaj ID'sini kaydetmek için dosya
+LAST_MESSAGE_FILE = "last_message_id.txt"
 
-TARGET_ROLES_2 = [
-    "Üst Yönetim Kurulu",
-    "Askeri Disiplin Kurulu",
-    "Askeri Kurultay",
-    "Disiplin Kurulu",
-    "Başkumandan",
-    "Lider"
-]
+API_ROLES_URL = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles"
+API_MEMBERS_URL = "https://groups.roblox.com/v1/groups/{group_id}/roles/{role_id}/users?limit=100"
 
 def get_roles():
-    url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles"
-    resp = session.get(url)
-    resp.raise_for_status()
-    return resp.json()["roles"]
+    r = requests.get(API_ROLES_URL)
+    r.raise_for_status()
+    return r.json().get("roles", [])
 
 def get_members(role_id):
     members = []
-    url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles/{role_id}/users?limit=100"
-    while url:
-        resp = session.get(url)
-        resp.raise_for_status()
-        data = resp.json()
-        for m in data["data"]:
-            # Sadece username alıyoruz (normal isim)
-            user_info = m.get("user", {})
-            username = user_info.get("username")
-            if username:
-                members.append(username)
-            else:
-                members.append("Bilinmiyor")
-        cursor = data.get("nextPageCursor")
+    cursor = ""
+    while True:
+        url = API_MEMBERS_URL.format(group_id=GROUP_ID, role_id=role_id)
         if cursor:
-            url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles/{role_id}/users?cursor={cursor}&limit=100"
-        else:
-            url = None
-    return members
+            url += f"&cursor={cursor}"
+        r = requests.get(url)
+        r.raise_for_status()
+        data = r.json()
+        for m in data.get("data", []):
+            username = (
+                m.get("user", {}).get("username")
+                if isinstance(m.get("user"), dict)
+                else m.get("username", "Bilinmiyor")
+            )
+            members.append(username)
+        cursor = data.get("nextPageCursor")
+        if not cursor:
+            break
+    return members if members else ["Üye yok"]
 
-def format_message(target_roles):
-    roles = get_roles()
-    msg = ""
-    for role in roles:
-        if role["name"] in target_roles:
+def build_message(roles):
+    mesaj = ""
+    
+    # 1. Blok: Büyük Konsey → Yönetim Kurulu
+    mesaj += "**Büyük Konsey → Yönetim Kurulu**\n\n"
+    for role_name in ["Büyük Konsey","Ankara Heyeti","Yüksek Askerî Şûra","Yönetim Kurulu"]:
+        role = next((r for r in roles if r["name"] == role_name), None)
+        if role:
             members = get_members(role["id"])
-            msg += f"**{role['name']} ({len(members)} Kişi)**\n"
+            mesaj += f"**{role_name} ({len(members)} Kişi)**\n"
             for name in members:
-                msg += f"{name}\n"
-            msg += "\n"
-    return msg
+                mesaj += f"{name}\n"
+            mesaj += "\n"
+    
+    # 2. Blok: Üst Yönetim Kurulu → Lider
+    mesaj += "**Üst Yönetim Kurulu → Lider**\n\n"
+    for role_name in ["Üst Yönetim Kurulu","Askeri Disiplin Kurulu","Askeri Kurultay","Disiplin Kurulu","Başkumandan","Lider"]:
+        role = next((r for r in roles if r["name"] == role_name), None)
+        if role:
+            members = get_members(role["id"])
+            mesaj += f"**{role_name} ({len(members)} Kişi)**\n"
+            for name in members:
+                mesaj += f"{name}\n"
+            mesaj += "\n"
+    return mesaj
 
-def send_to_discord(message, message_id=None):
-    data = {"content": message}
+def send_to_discord(content):
+    message_id = None
+    # Önceki mesaj ID'sini oku
+    if os.path.exists(LAST_MESSAGE_FILE):
+        with open(LAST_MESSAGE_FILE, "r") as f:
+            message_id = f.read().strip()
+    
+    headers = {"Content-Type": "application/json"}
+
     if message_id:
-        resp = requests.patch(f"{WEBHOOK_URL}/messages/{message_id}", json=data)
-        if resp.status_code in [200, 204]:
-            return message_id
+        # Mevcut mesajı güncelle
+        r = requests.patch(f"{DISCORD_WEBHOOK}/messages/{message_id}", json={"content": content}, headers=headers)
+        if r.status_code not in [200, 204]:
+            print("Mesaj güncellenemedi, yeni mesaj gönderiliyor...")
+            r = requests.post(DISCORD_WEBHOOK, json={"content": content}, headers=headers)
+            if r.status_code == 200:
+                message_id = r.json().get("id")
     else:
-        resp = requests.post(WEBHOOK_URL, json=data)
-        if resp.status_code in [200, 204]:
-            return resp.json().get("id")
-    return None
+        # Yeni mesaj gönder
+        r = requests.post(DISCORD_WEBHOOK, json={"content": content}, headers=headers)
+        if r.status_code == 200:
+            message_id = r.json().get("id")
+    
+    # Mesaj ID'sini kaydet
+    if message_id:
+        with open(LAST_MESSAGE_FILE, "w") as f:
+            f.write(message_id)
 
 def main():
-    message_id_1 = None
-    message_id_2 = None
-    while True:
-        msg1 = format_message(TARGET_ROLES_1)
-        message_id_1 = send_to_discord(msg1, message_id_1)
-
-        msg2 = format_message(TARGET_ROLES_2)
-        message_id_2 = send_to_discord(msg2, message_id_2)
-
-        # 20 dakika bekle
-        time.sleep(1200)
+    try:
+        roles = get_roles()
+        mesaj = build_message(roles)
+        send_to_discord(mesaj)
+        print("Liste Discord'a gönderildi veya güncellendi.")
+    except Exception as e:
+        print("Hata oluştu:", e)
 
 if __name__ == "__main__":
     main()
