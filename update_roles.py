@@ -3,7 +3,7 @@ import os
 import time
 
 GROUP_ID = 6011967  # BTF Turkish Armed Forces
-WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
+WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")  # GitHub Secrets ile eklediğin webhook
 
 session = requests.Session()
 session.headers.update({
@@ -34,7 +34,7 @@ def get_roles():
     resp.raise_for_status()
     return resp.json()["roles"]
 
-# Bir role ait üyeleri al (sadece normal name)
+# Bir role ait üyeleri al
 def get_members(role_id):
     members = []
     url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles/{role_id}/users?limit=100"
@@ -42,15 +42,17 @@ def get_members(role_id):
         resp = session.get(url)
         resp.raise_for_status()
         data = resp.json()
-        for m in data.get("data", []):
-            user_info = m.get("user", {})
-            name = user_info.get("name") or "Bilinmiyor"
-            members.append(name)
+        for m in data["data"]:
+            if "user" in m:
+                members.append(m["user"].get("name") or m["user"].get("displayName") or "Bilinmiyor")
+            else:
+                members.append("Bilinmiyor")
         cursor = data.get("nextPageCursor")
         if cursor:
             url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles/{role_id}/users?cursor={cursor}&limit=100"
         else:
             url = None
+        time.sleep(0.3)  # API’yi yavaşlat
     return members
 
 # Mesaj formatla
@@ -66,21 +68,29 @@ def format_message(target_roles):
             msg += "\n"
     return msg
 
-# Discord’a gönder
+# Discord’a gönder veya güncelle
 def send_to_discord(message, message_id=None):
     data = {"content": message}
     if message_id:
-        requests.patch(f"{WEBHOOK_URL}/messages/{message_id}", json=data)
-    else:
-        resp = requests.post(WEBHOOK_URL, json=data)
-        if resp.status_code in [200, 204]:
+        try:
+            resp = requests.patch(f"{WEBHOOK_URL}/messages/{message_id}", json=data)
+            if resp.status_code in [200, 204]:
+                return message_id
+        except:
+            pass
+    # Yeni mesaj at
+    resp = requests.post(WEBHOOK_URL, json=data)
+    if resp.status_code in [200, 201, 204]:
+        try:
             return resp.json().get("id")
+        except:
+            # Eğer JSON yoksa, mesaj ID’si yok ama Discord’a gitti
+            return None
     return None
 
 def main():
     message_id_1 = None
     message_id_2 = None
-
     while True:
         # 1. Mesaj: Büyük Konsey → Yönetim Kurulu
         msg1 = format_message(TARGET_ROLES_1)
@@ -91,7 +101,7 @@ def main():
         message_id_2 = send_to_discord(msg2, message_id_2)
 
         # 20 dakika bekle
-        time.sleep(1200)  # 1200 saniye = 20 dakika
+        time.sleep(1200)
 
 if __name__ == "__main__":
     main()
