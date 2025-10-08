@@ -3,14 +3,14 @@ import os
 import time
 
 GROUP_ID = 6011967  # BTF Turkish Armed Forces
-WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
+WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")  # GitHub Secrets ile eklediğin webhook
 
 session = requests.Session()
 session.headers.update({
     "User-Agent": "Mozilla/5.0"
 })
 
-# Roller gruplar
+# Roller
 TARGET_ROLES_1 = [
     "Büyük Konsey",
     "Ankara Heyeti",
@@ -42,10 +42,12 @@ def get_members(role_id):
         resp = session.get(url)
         resp.raise_for_status()
         data = resp.json()
-        for m in data.get("data", []):
-            if "user" in m:
-                name = m["user"].get("name") or m["user"].get("displayName") or "Bilinmiyor"
-                members.append(name)
+        for m in data["data"]:
+            # Eskiden user.name varken, bazı durumlarda username kullanılıyor
+            if "user" in m and "name" in m["user"]:
+                members.append(m["user"]["name"])
+            elif "username" in m:
+                members.append(m["username"])
             else:
                 members.append("Bilinmiyor")
         cursor = data.get("nextPageCursor")
@@ -77,14 +79,13 @@ def send_to_discord(message, message_id=None):
             return message_id
     else:
         resp = requests.post(WEBHOOK_URL, json=data)
-        if resp.status_code in [200, 201, 204]:
-            return resp.json().get("id")
+        if resp.status_code in [200, 204]:
+            return resp.json()["id"]
     return None
 
 def main():
     message_id_1 = None
     message_id_2 = None
-
     while True:
         # 1. Mesaj: Büyük Konsey → Yönetim Kurulu
         msg1 = format_message(TARGET_ROLES_1)
