@@ -1,7 +1,7 @@
 import os
 import requests
 
-WEBHOOK_URL = os.environ.get("https://discord.com/api/webhooks/1425505894078087240/Nrg19zDLItAwCOYOambjx1SfBO9bEzq7CwUMYSui8bp7cXbwdtzIkVShlSpqHUO11sHL")
+WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
 # Örnek: Roller ve üyeleri burada çektiğinizi varsayalım
 roles_list = {
