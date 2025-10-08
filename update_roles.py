@@ -34,7 +34,7 @@ def get_roles():
     resp.raise_for_status()
     return resp.json()["roles"]
 
-# Bir role ait üyeleri al
+# Bir role ait üyeleri al (sadece normal name)
 def get_members(role_id):
     members = []
     url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles/{role_id}/users?limit=100"
@@ -43,10 +43,9 @@ def get_members(role_id):
         resp.raise_for_status()
         data = resp.json()
         for m in data.get("data", []):
-            if "user" in m and "name" in m["user"]:
-                members.append(m["user"]["name"])
-            else:
-                members.append("Bilinmiyor")
+            user_info = m.get("user", {})
+            name = user_info.get("name") or "Bilinmiyor"
+            members.append(name)
         cursor = data.get("nextPageCursor")
         if cursor:
             url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles/{role_id}/users?cursor={cursor}&limit=100"
@@ -67,23 +66,16 @@ def format_message(target_roles):
             msg += "\n"
     return msg
 
-# Discord’a gönder veya güncelle
+# Discord’a gönder
 def send_to_discord(message, message_id=None):
     data = {"content": message}
-    try:
-        if message_id:
-            resp = requests.patch(f"{WEBHOOK_URL}/messages/{message_id}", json=data)
-            return message_id
-        else:
-            resp = requests.post(WEBHOOK_URL, json=data)
-            resp.raise_for_status()
-            try:
-                return resp.json().get("id")
-            except:
-                return None
-    except Exception as e:
-        print(f"Discord gönderme hatası: {e}")
-        return None
+    if message_id:
+        requests.patch(f"{WEBHOOK_URL}/messages/{message_id}", json=data)
+    else:
+        resp = requests.post(WEBHOOK_URL, json=data)
+        if resp.status_code in [200, 204]:
+            return resp.json().get("id")
+    return None
 
 def main():
     message_id_1 = None
@@ -98,7 +90,7 @@ def main():
         msg2 = format_message(TARGET_ROLES_2)
         message_id_2 = send_to_discord(msg2, message_id_2)
 
-        print("Mesajlar güncellendi. 20 dakika bekleniyor...")
+        # 20 dakika bekle
         time.sleep(1200)  # 1200 saniye = 20 dakika
 
 if __name__ == "__main__":
