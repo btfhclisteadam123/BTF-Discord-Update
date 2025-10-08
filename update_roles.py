@@ -43,8 +43,14 @@ def get_members(role_id):
         resp.raise_for_status()
         data = resp.json()
         for m in data["data"]:
+            # Sadece normal isim (name veya username) alınacak, displayName kullanılmayacak
             if "user" in m:
-                members.append(m["user"].get("name") or m["user"].get("displayName") or "Bilinmiyor")
+                if "name" in m["user"]:
+                    members.append(m["user"]["name"])
+                elif "username" in m["user"]:
+                    members.append(m["user"]["username"])
+                else:
+                    members.append("Bilinmiyor")
             else:
                 members.append("Bilinmiyor")
         cursor = data.get("nextPageCursor")
@@ -52,7 +58,6 @@ def get_members(role_id):
             url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles/{role_id}/users?cursor={cursor}&limit=100"
         else:
             url = None
-        time.sleep(0.3)  # API’yi yavaşlat
     return members
 
 # Mesaj formatla
@@ -72,20 +77,13 @@ def format_message(target_roles):
 def send_to_discord(message, message_id=None):
     data = {"content": message}
     if message_id:
-        try:
-            resp = requests.patch(f"{WEBHOOK_URL}/messages/{message_id}", json=data)
-            if resp.status_code in [200, 204]:
-                return message_id
-        except:
-            pass
-    # Yeni mesaj at
-    resp = requests.post(WEBHOOK_URL, json=data)
-    if resp.status_code in [200, 201, 204]:
-        try:
-            return resp.json().get("id")
-        except:
-            # Eğer JSON yoksa, mesaj ID’si yok ama Discord’a gitti
-            return None
+        resp = requests.patch(f"{WEBHOOK_URL}/messages/{message_id}", json=data)
+        if resp.status_code in [200, 204]:
+            return message_id
+    else:
+        resp = requests.post(WEBHOOK_URL, json=data)
+        if resp.status_code in [200, 204]:
+            return resp.json()["id"]
     return None
 
 def main():
