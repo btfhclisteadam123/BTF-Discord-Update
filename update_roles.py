@@ -3,7 +3,7 @@ import os
 import time
 
 GROUP_ID = 6011967  # BTF Turkish Armed Forces
-WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")  # GitHub Secrets ile eklediğin webhook
+WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
 session = requests.Session()
 session.headers.update({
@@ -42,12 +42,9 @@ def get_members(role_id):
         resp = session.get(url)
         resp.raise_for_status()
         data = resp.json()
-        for m in data["data"]:
-            # Eskiden user.name varken, bazı durumlarda username kullanılıyor
+        for m in data.get("data", []):
             if "user" in m and "name" in m["user"]:
                 members.append(m["user"]["name"])
-            elif "username" in m:
-                members.append(m["username"])
             else:
                 members.append("Bilinmiyor")
         cursor = data.get("nextPageCursor")
@@ -73,19 +70,25 @@ def format_message(target_roles):
 # Discord’a gönder veya güncelle
 def send_to_discord(message, message_id=None):
     data = {"content": message}
-    if message_id:
-        resp = requests.patch(f"{WEBHOOK_URL}/messages/{message_id}", json=data)
-        if resp.status_code in [200, 204]:
+    try:
+        if message_id:
+            resp = requests.patch(f"{WEBHOOK_URL}/messages/{message_id}", json=data)
             return message_id
-    else:
-        resp = requests.post(WEBHOOK_URL, json=data)
-        if resp.status_code in [200, 204]:
-            return resp.json()["id"]
-    return None
+        else:
+            resp = requests.post(WEBHOOK_URL, json=data)
+            resp.raise_for_status()
+            try:
+                return resp.json().get("id")
+            except:
+                return None
+    except Exception as e:
+        print(f"Discord gönderme hatası: {e}")
+        return None
 
 def main():
     message_id_1 = None
     message_id_2 = None
+
     while True:
         # 1. Mesaj: Büyük Konsey → Yönetim Kurulu
         msg1 = format_message(TARGET_ROLES_1)
@@ -95,8 +98,8 @@ def main():
         msg2 = format_message(TARGET_ROLES_2)
         message_id_2 = send_to_discord(msg2, message_id_2)
 
-        # 20 dakika bekle
-        time.sleep(1200)
+        print("Mesajlar güncellendi. 20 dakika bekleniyor...")
+        time.sleep(1200)  # 1200 saniye = 20 dakika
 
 if __name__ == "__main__":
     main()
