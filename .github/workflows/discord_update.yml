@@ -5,7 +5,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: "*/5 * * * *" # Her 5 dakikada bir çalışır
+    - cron: "*/5 * * * *" # Her 5 dakikada bir çalışacak
 
 jobs:
   update-discord:
