@@ -1,43 +1,91 @@
-import os
 import requests
+import os
 
+GROUP_ID = 6011967  # BTF Turkish Armed Forces
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
-# Örnek: Roller ve üyeleri burada çektiğinizi varsayalım
-roles_list = {
-    "Büyük Konsey": ["Üye1", "Üye2", "Üye3"],
-    "Ankara Heyeti": ["Üye1", "Üye2"],
-    "Yüksek Askerî Şûra": ["Üye1"],
-    "Yönetim Kurulu": ["Üye1", "Üye2"],
-    "Üst Yönetim Kurulu": ["Üye1"],
-    "Askeri Disiplin Kurulu": ["Üye1"],
-    "Askeri Kurultay": ["Üye1"],
-    "Disiplin Kurulu": ["Üye1"],
-    "Başkumandan": ["Üye1"],
-    "Lider": ["Üye1", "Üye2"]
-}
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0"
+})
 
-# Mesajı oluştur
-def create_discord_message(roles):
-    msg_parts = []
-    # 2 mesaja bölmek için listeleri ayırabiliriz
-    first_half_roles = ["Büyük Konsey","Ankara Heyeti","Yüksek Askerî Şûra","Yönetim Kurulu"]
-    second_half_roles = ["Üst Yönetim Kurulu","Askeri Disiplin Kurulu","Askeri Kurultay","Disiplin Kurulu","Başkumandan","Lider"]
+# Roller
+TARGET_ROLES_1 = [
+    "Büyük Konsey",
+    "Ankara Heyeti",
+    "Yüksek Askerî Şûra",
+    "Yönetim Kurulu"
+]
 
-    def build_section(role_names):
-        lines = []
-        for role in role_names:
-            members = roles.get(role, [])
-            lines.append(f"**{role} ({len(members)} Kişi)**")
-            for m in members:
-                lines.append(f"- {m}")
-            lines.append("")  # boş satır
-        return "\n".join(lines)
+TARGET_ROLES_2 = [
+    "Üst Yönetim Kurulu",
+    "Askeri Disiplin Kurulu",
+    "Askeri Kurultay",
+    "Disiplin Kurulu",
+    "Başkumandan",
+    "Lider"
+]
 
-    return build_section(first_half_roles), build_section(second_half_roles)
+# Tüm roller
+def get_roles():
+    url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles"
+    resp = session.get(url)
+    resp.raise_for_status()
+    return resp.json()["roles"]
 
-first_msg, second_msg = create_discord_message(roles_list)
+# Bir role ait üyeleri al
+def get_members(role_id):
+    members = []
+    url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles/{role_id}/users?limit=100"
+    while url:
+        resp = session.get(url)
+        resp.raise_for_status()
+        data = resp.json()
+        for m in data["data"]:
+            if "user" in m and "name" in m["user"]:
+                members.append(m["user"]["name"])
+            else:
+                members.append("Bilinmiyor")
+        cursor = data.get("nextPageCursor")
+        if cursor:
+            url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles/{role_id}/users?cursor={cursor}&limit=100"
+        else:
+            url = None
+    return members
 
-# Discord'a gönder
-requests.post(WEBHOOK_URL, json={"content": first_msg})
-requests.post(WEBHOOK_URL, json={"content": second_msg})
+# Mesaj formatla
+def format_message(target_roles):
+    roles = get_roles()
+    msg = ""
+    for role in roles:
+        if role["name"] in target_roles:
+            members = get_members(role["id"])
+            msg += f"**{role['name']} ({len(members)} Kişi)**\n"
+            for name in members:
+                msg += f"{name}\n"
+            msg += "\n"
+    return msg
+
+# Discord’a gönder
+def send_to_discord(message, message_id=None):
+    data = {"content": message}
+    if message_id:
+        requests.patch(f"{WEBHOOK_URL}/messages/{message_id}", json=data)
+    else:
+        resp = requests.post(WEBHOOK_URL, json=data)
+        if resp.status_code == 200 or resp.status_code == 204:
+            return resp.json()["id"]
+    return None
+
+def main():
+    # 1. Mesaj: Büyük Konsey → Yönetim Kurulu
+    msg1 = format_message(TARGET_ROLES_1)
+    # 2. Mesaj: Üst Yönetim Kurulu → Lider
+    msg2 = format_message(TARGET_ROLES_2)
+
+    # Gönder
+    send_to_discord(msg1)
+    send_to_discord(msg2)
+
+if __name__ == "__main__":
+    main()
